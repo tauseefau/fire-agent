@@ -1,0 +1,36 @@
+name: CI lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python syntax check (py_compile)
+        run: |
+          set -e
+          python -m py_compile tool_server.py scripts/dashboard_api.py scripts/firis_tts_server.py scripts/enrich_fire_data.py scripts/populate_dispatch.py scripts/n8n.py
+          echo "Python OK"
+
+      - name: Shell syntax check (bash -n)
+        run: |
+          set -e
+          bash -n ff_responder.sh
+          echo "Shell OK"
+
+      - name: Secret scan (no hardcoded creds)
+        run: |
+          set -e
+          if grep -rInE "23ddjki|PGPASSWORD[ =]+\"[^\"]+\"" tool_server.py ff_responder.sh scripts/ 2>/dev/null; then
+            echo "FOUND hardcoded secret"; exit 1
+          fi
+          echo "No hardcoded secrets"
