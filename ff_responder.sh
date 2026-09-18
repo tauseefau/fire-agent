@@ -20,7 +20,7 @@ if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE"; set +a; fi
 IDENT="${1:-}"; PROMPT="${2:-}"
 [[ -z "$IDENT" ]] && { echo "ERROR: no firefighter identity given"; exit 2; }
 
-DB() { docker exec -e PGPASSWORD=23ddjki postgres-db-1 psql -U tauseef -d fire_services -tA -F'|' -c "$1" 2>/dev/null; }
+DB() { docker exec -e PGPASSWORD="$PGPASSWORD" postgres-db-1 psql -U tauseef -d fire_services -tA -F'|' -c "$1" 2>/dev/null; }
 
 echo "=== 1) Authenticating firefighter: $IDENT ==="
 RESULT="$(DB "SELECT ff.full_name, ff.call_sign, ff.role, fs.station_name, COALESCE(ff.voice_credential,'')

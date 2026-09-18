@@ -32,7 +32,7 @@ import subprocess
 DB_USER = "tauseef"
 DB_NAME = "fire_services"
 CONTAINER = "postgres-db-1"
-DB_PASS = "23ddjki"
+DB_PASS = os.environ.get("PGPASSWORD") or os.environ.get("PGPASS", "")
 
 
 def run_sql(sql: str, params: dict = None) -> str:
