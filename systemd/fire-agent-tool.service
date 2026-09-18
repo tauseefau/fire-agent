@@ -1,0 +1,14 @@
+[Unit]
+Description=ElevenLabs Fire DB Webhook Tool Server
+After=docker.service network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/.hermes/elevenlabs
+ExecStart=/usr/bin/python3 /home/ubuntu/.hermes/elevenlabs/tool_server.py --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

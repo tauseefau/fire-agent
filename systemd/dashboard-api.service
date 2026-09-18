@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire Services Dashboard JSON API
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/.hermes/scripts
+ExecStart=/usr/bin/python3 /home/ubuntu/.hermes/scripts/dashboard_api.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

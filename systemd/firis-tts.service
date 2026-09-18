@@ -1,0 +1,13 @@
+[Unit]
+Description=FIRIS local STT + TTS microservice (whisper.cpp + edge-tts)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/ubuntu/.hermes/tts-venv/bin/python /home/ubuntu/.hermes/scripts/firis_tts_server.py --host 127.0.0.1 --port 8002
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
