@@ -30,7 +30,7 @@ jobs:
       - name: Secret scan (no hardcoded creds)
         run: |
           set -e
-          if grep -rInE "23ddjki|PGPASSWORD[ =]+\"[^\"]+\"" tool_server.py ff_responder.sh scripts/ 2>/dev/null; then
+          if grep -rInE "23ddjki|DB_PASS[ =]+\"[^\"]+\"|PGPASSWORD=[\"']?[0-9a-zA-Z]{6,}" tool_server.py ff_responder.sh scripts/ 2>/dev/null; then
             echo "FOUND hardcoded secret"; exit 1
           fi
           echo "No hardcoded secrets"
