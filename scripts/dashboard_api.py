@@ -9,7 +9,7 @@ import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-PGPASSWORD = os.environ.get("PGPASSWORD") or os.environ.get("PGPASS", "")
+PGPASSWORD = os.environ.get("PGPASSWORD", "23ddjki")
 DB = "postgres-db-1"
 
 def psql(sql):
@@ -20,6 +20,37 @@ def psql(sql):
     if r.returncode != 0:
         raise RuntimeError(r.stderr)
     return [ln for ln in r.stdout.splitlines() if ln.strip()]
+
+WPCONFIG = "/home/tauseef/web/diyyourdata.com/public_html/wp-config.php"
+
+def mysqlexec(phpcode):
+    """Run a PHP snippet that uses WP MySQL (PDO) and emit JSON to stdout."""
+    script = ("require %r; $p=new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME,DB_USER,DB_PASSWORD);"
+              "$p->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION); " % WPCONFIG) + phpcode
+    r = subprocess.run(["php", "-r", script], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr)
+    return r.stdout
+
+def hermes_admin_token():
+    out = mysqlexec("echo json_encode($p->query(\"SELECT cval FROM hermes_config WHERE ckey='admin_token'\")->fetchColumn());")
+    t = json.loads(out or "null")
+    return t or ""
+
+def hermes_keys_all():
+    out = mysqlexec("echo json_encode($p->query(\"SELECT key_name, key_value FROM hermes_keys WHERE enabled=1\")->fetchAll(PDO::FETCH_ASSOC));")
+    rows = json.loads(out or "[]")
+    return {r["key_name"]: r["key_value"] for r in rows}
+
+def hermes_key_list():
+    out = mysqlexec("echo json_encode($p->query(\"SELECT key_name, COALESCE(skill_ref,'') s, enabled FROM hermes_keys ORDER BY key_name\")->fetchAll(PDO::FETCH_ASSOC));")
+    return [{"name": r["key_name"], "skill": r["s"] or None, "enabled": bool(r["enabled"])} for r in json.loads(out or "[]")]
+
+def hermes_key_save(name, val, skill=None):
+    n = name.replace("'", "''"); v = val.replace("'", "''"); s = (skill or "").replace("'", "''")
+    php = ("$p->exec(\"INSERT INTO hermes_keys (key_name,key_value,skill_ref) VALUES ('%s','%s','%s') "
+           "ON DUPLICATE KEY UPDATE key_value='%s', skill_ref='%s'\"); echo '1';" % (n, v, s, v, s))
+    mysqlexec(php)
 
 
 def incidents_json():
@@ -562,6 +593,58 @@ class Handler(BaseHTTPRequestHandler):
                        + ", " + S(body.get("improvements")) + ", " + N(body.get("overall_satisfaction")) + ")")
                 psql(sql)
                 return self._send({"ok": True, "message": "Survey submitted"})
+            except Exception as e:
+                return self._send({"ok": False, "error": str(e)}, 500)
+        # --- Hermes admin key manager (localhost restapi bridge: page -> .env) ---
+        if path in ("/admin/keys", "/admin/synckeys", "/timeline/api/admin/keys") \
+           or path in ("/admin/key/set", "/timeline/api/admin/key/set"):
+            try:
+                tok = (self.headers.get("X-Hermes-Admin") or "").strip()
+                expect = hermes_admin_token()
+                if not expect or not tok or tok != expect:
+                    return self._send({"ok": False, "error": "forbidden"}, 403)
+                if path.endswith("/key/set") or path == "/admin/key/set":
+                    name = s(body.get("key_name")); val = s(body.get("key_value"))
+                    skill = s(body.get("skill_ref"))
+                    if not name or not val:
+                        return self._send({"ok": False, "error": "key_name+key_value required"}, 400)
+                    hermes_key_save(name, val, skill)
+                    return self._send({"ok": True, "message": f"key {name} saved; run sync to write .env"})
+                action = (body or {}).get("action", "sync")
+                if action == "sync":
+                    keys = hermes_keys_all()
+                    ENV_PATH = os.path.expanduser("~/.hermes/.env")
+                    lines, keep = [], set()
+                    if os.path.exists(ENV_PATH):
+                        for ln in open(ENV_PATH, encoding="utf-8"):
+                            s = ln.rstrip("\n")
+                            if "=" in s and not s.lstrip().startswith("#"):
+                                k = s.split("=", 1)[0].strip()
+                                if k in keys:
+                                    if k not in keep:
+                                        keep.add(k)
+                                    continue  # rewrite below with fresh value
+                            lines.append(s)
+                    for k, v in keys.items():
+                        keep.add(k)
+                        lines.append(f"{k}={v}")
+                    final, seen = [], set()
+                    for ln in lines:
+                        if "=" in ln and not ln.lstrip().startswith("#"):
+                            k = ln.split("=", 1)[0].strip()
+                            if k in keys and k in seen:
+                                continue
+                            if k in keys:
+                                seen.add(k)
+                        final.append(ln)
+                    with open(ENV_PATH, "w", encoding="utf-8") as f:
+                        f.write("\n".join(final).rstrip("\n") + "\n")
+                    os.chmod(ENV_PATH, 0o600)
+                    return self._send({"ok": True, "message": f"synced {len(keys)} keys to {ENV_PATH}",
+                                       "keys": sorted(keys.keys())})
+                elif action == "list":
+                    return self._send({"ok": True, "keys": hermes_key_list()})
+                return self._send({"ok": False, "error": "unknown action"}, 400)
             except Exception as e:
                 return self._send({"ok": False, "error": str(e)}, 500)
         return self._send({"error": "not found", "path": path}, 404)
